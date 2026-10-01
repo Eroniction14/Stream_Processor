@@ -161,5 +161,4 @@ MIT
 
 ## Author
 
-Eronic — MS Computer Science @ Northeastern University
-Built to demonstrate production engineering skills for SDE internships
+Eroniction Presley
