@@ -145,7 +145,7 @@ Go 1.24 · Apache Kafka · Prometheus · Grafana · Angular 20 · Docker · Test
 
 ## Author
 
-Eronic, MS Computer Science at Northeastern University
+Eroniction Presley, MS Computer Science at Northeastern University
 
 ## License
 
