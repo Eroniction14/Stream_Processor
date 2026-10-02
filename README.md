@@ -14,7 +14,7 @@ The dashboard shows all of this live: events flowing through the pipeline, throu
 
 ```bash
 git clone https://github.com/Eroniction14/Stream_Processor.git
-cd stream-processor/frontend
+cd Stream_Processor/frontend
 npm install && npm run build      # builds the dashboard UI
 cd ../deployments
 docker compose up -d --build
