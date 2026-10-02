@@ -1,164 +1,152 @@
-# Production-Ready Stream Processor
+# Stream Processor
 
-A production-grade event stream processing pipeline built with Go and Apache Kafka, demonstrating real-world patterns: windowed aggregation, dead-letter queues, retry with exponential backoff, graceful shutdown, and full Prometheus/Grafana observability.
+A production-style event stream processing pipeline in Go and Apache Kafka, with a live Angular dashboard for watching it work and breaking it on purpose. It covers windowed aggregation, dead-letter queues, retry with exponential backoff, graceful shutdown, and Prometheus observability.
 
-## Motivation
+![Live dashboard](docs/dashboard.png)
 
-Modern distributed systems at companies like Amazon, Netflix, and Airbnb rely on event-driven architectures to process millions of events per second. This project implements the core patterns needed to build reliable stream processors, going beyond toy examples to address real production concerns.
+## What it does
 
-## Features
+A generator simulates website users and publishes events (`page_view`, `transaction`, `user_action`) to Kafka. The processor consumes them, validates and enriches each one, and aggregates them into one-minute tumbling windows per event type. Results go to an output topic; malformed events go to a dead-letter topic with error metadata instead of crashing the pipeline.
 
-- Multi-stage processing pipeline with composable `Stage` interface
-- Windowed aggregation (tumbling windows, configurable size)
-- Dead-letter queue for poison messages with error metadata headers
-- Retry with exponential backoff + jitter
-- Graceful shutdown (SIGINT/SIGTERM, drain in-flight, final flush)
-- Prometheus metrics (throughput, latency histograms, error rates)
-- Health checks (liveness + readiness HTTP endpoints)
-- Dockerized end-to-end deployment with Kafka, Prometheus, and Grafana
-- Event generator for demo and load testing
-- Integration tests using Testcontainers (real Kafka broker in Docker)
+The dashboard shows all of this live: events flowing through the pipeline, throughput and latency, closed windows, and dead letters. It also has fault-injection controls, so you can send a malformed event or a burst of thousands and watch the system react.
+
+## Quick start
+
+```bash
+git clone https://github.com/Eroniction14/stream-processor
+cd stream-processor/frontend
+npm install && npm run build      # builds the dashboard UI
+cd ../deployments
+docker compose up -d --build
+```
+
+Then open:
+
+| URL | What |
+|---|---|
+| http://localhost:8080 | Live dashboard |
+| http://localhost:3000 | Grafana (admin / admin) |
+| http://localhost:9091 | Prometheus |
+| http://localhost:8081/healthz, `/readyz` | Processor health checks |
+| http://localhost:9090/metrics | Raw processor metrics |
+
+Startup is ordered with health checks: Kafka waits for a healthy Zookeeper, topics are created by a one-shot `kafka-init` job, and the processor, generator, and dashboard start only after it completes.
 
 ## Architecture
 
-**Components:**
-- **Kafka** — Input topic (`user-events`), output topic (`aggregated-stats`), dead-letter topic (`dead-letter`)
-- **Consumer Group** — Reads from Kafka with retry + exponential backoff
-- **Pipeline** — Deserializer → Router → Enricher → Aggregator → Kafka Sink
-- **State Store** — Thread-safe in-memory store for enrichment lookups
-- **DLQ Handler** — Routes poison messages to dead-letter topic with error metadata
-- **Observability** — Prometheus metrics, Grafana dashboards, health/readiness endpoints
-
-### Processing Pipeline
-
 ```
-Event --> Deserialize --> Route --> Enrich --> Aggregate --> Emit
-                           |                                  |
-                      [filtered]                    [output topic]
-            |
-       [invalid: DLQ]
+Generator ──► Kafka: user-events (6 partitions) ──► Processor ──► Kafka: aggregated-stats
+                         │                              │
+                         │                              └──► Kafka: dead-letter
+                         │
+                         └──────────────► Dashboard ◄──── Prometheus ◄── processor /metrics
+                              (own consumer groups)
 ```
 
-Each stage implements the `Stage` interface, making the pipeline fully composable and testable.
+**Processor pipeline:** Deserialize → Route → Enrich → Aggregate → Emit. Each step implements a `Stage` interface, so steps are independently testable and replaceable.
 
-### Production Patterns
+**Dashboard:** a separate Go service that reads `user-events` and `aggregated-stats` through its own consumer groups, queries Prometheus, and streams updates to the browser over Server-Sent Events. It never touches the processor's code or consumer group, the same way a real downstream team would consume a topic. The UI is an Angular app embedded into the Go binary, so the dashboard ships as one container.
 
-| Pattern | Implementation |
-|---------|---------------|
-| Retry | Exponential backoff with jitter, configurable max attempts |
-| DLQ | Failed messages routed to dead-letter topic with error metadata |
-| Graceful Shutdown | Context cancellation, drain in-flight messages, final flush |
-| Observability | Prometheus counters/histograms, structured logging, health endpoints |
-| Windowed Aggregation | Tumbling windows with periodic flush of expired windows |
-| State Management | Thread-safe in-memory store with RWMutex |
+## Features
 
-## Quick Start
-
-```bash
-# Clone repository
-git clone https://github.com/Eroniction14/stream-processor
-cd stream-processor
-
-# Start everything
-cd deployments
-docker compose up --build
-
-# View Grafana dashboard
-# Open http://localhost:3000 (login: admin / admin)
-
-# Check health
-curl http://localhost:8081/healthz
-curl http://localhost:8081/readyz
-
-# View raw Prometheus metrics
-curl http://localhost:9090/metrics
-```
+- Multi-stage pipeline built on a composable `Stage` interface
+- Tumbling-window aggregation per event type (count, unique users, revenue, average duration)
+- Dead-letter queue for poison messages (invalid JSON, missing ID) with error metadata headers
+- Retry with exponential backoff and jitter
+- Graceful shutdown: drains in-flight messages and flushes open windows
+- Prometheus metrics with microsecond-resolution latency histograms
+- Liveness and readiness endpoints
+- Live dashboard with fault injection (malformed events, bursts up to 5,000)
+- Integration tests against a real Kafka broker using Testcontainers
 
 ## Performance
 
-| Metric | Value |
-|--------|-------|
-| Throughput | ~10,000 events/sec (single instance) |
-| Processing Latency (p50) | < 1ms |
-| Processing Latency (p99) | < 5ms |
-| Graceful Shutdown | < 5s (drain + flush) |
-| Recovery Time | < 10s (consumer group rebalance) |
+Measured on a laptop (Docker Desktop, single processor instance):
 
-## Project Structure
+| Metric | Measured |
+|---|---|
+| Processing latency, p50 | ~6 µs |
+| Processing latency, p99 | ~90 µs |
+| Processing latency, max | < 250 µs |
+| Burst of 5,000 events | drained in X s |
+
+Latency is in-process pipeline time per event (receive to aggregate), from the `processing_latency_seconds` histogram. It does not include time spent queued in Kafka. Steady-state traffic is about 10 events/s, set by the generator; bursts come from the dashboard's fault-injection controls.
+
+## Bugs the dashboard caught
+
+Building live observability surfaced real defects that tests hadn't:
+
+1. **Generator ran at ~1 event/s instead of 10.** `kafka-go`'s `Writer` waits up to `BatchTimeout` (default 1 s) to fill a batch, and `WriteMessages` is synchronous, so every write blocked for about a second. Fixed by setting `BatchTimeout: 10ms`.
+2. **All event types were merged into one window.** The aggregator keyed windows by time only, so each minute produced a single result labeled with whichever type arrived first, mixing transaction amounts into page views and diluting average durations. Fixed by keying on (window, event type); covered by a regression test.
+3. **Open windows were lost on shutdown.** The "final flush" only emitted windows that had already ended, while their offsets were already committed. Shutdown now flushes every open window. A restart can therefore emit the same window twice (at-least-once), which the dashboard shows as a "revised" row.
+4. **p99 latency was stuck at 0.99 ms.** The smallest histogram bucket was 1 ms, so every observation fell into it and the quantile estimate was pinned near the bucket edge. Buckets now start at 10 µs, which revealed the real p99 is about 90 µs.
+
+## Project structure
 
 ```
 stream-processor/
 ├── cmd/
-│   ├── processor/          # Main application entrypoint
-│   └── generator/          # Event generator for testing
+│   ├── processor/        # Processor entrypoint
+│   ├── generator/        # Event generator
+│   └── dashboard/        # Dashboard server: Kafka readers, SSE, Prometheus proxy, fault injection
+├── frontend/             # Angular dashboard UI (embedded into the dashboard binary)
 ├── internal/
-│   ├── pipeline/           # Core pipeline: stages, aggregator, events
-│   ├── consumer/           # Kafka consumer with retry + DLQ
-│   ├── producer/           # Kafka producer (batched sink)
-│   ├── state/              # In-memory state store
-│   ├── metrics/            # Prometheus instrumentation
-│   └── health/             # Liveness + readiness endpoints
-├── config/                 # YAML configuration
-├── deployments/            # Docker, Docker Compose, Prometheus config
-├── tests/
-│   └── integration/        # Integration tests with Testcontainers
-├── go.mod
-└── README.md
+│   ├── pipeline/         # Stages, aggregator, events
+│   ├── consumer/         # Kafka consumer with retry and DLQ
+│   ├── producer/         # Kafka producer (batched sink)
+│   ├── state/            # In-memory state store
+│   ├── metrics/          # Prometheus instrumentation
+│   └── health/           # Liveness and readiness endpoints
+├── config/               # YAML configuration
+├── deployments/          # Docker Compose, Dockerfiles, Prometheus config
+└── tests/integration/    # Testcontainers integration tests
 ```
 
 ## Testing
 
 ```bash
-# Run all tests (unit + integration)
-go test -v ./... -timeout 180s
-
-# Run only unit tests (fast, no Docker needed)
-go test -short ./...
-
-# Run only integration tests
-go test -v ./tests/integration/ -timeout 120s
-
-# Run with race detector
-go test -race ./...
+go test -short ./...                          # unit tests, no Docker needed
+go test -v ./tests/integration/ -timeout 120s  # integration tests (needs Docker)
+go test -race ./...                           # with the race detector
 ```
 
-### Test Coverage
+| Suite | Tests | Covers |
+|---|---|---|
+| Unit (pipeline) | 12 | Window aggregation per event type, shutdown flush, routing, validation, error propagation |
+| Integration (end to end) | 1 | Produce → Kafka → pipeline → aggregated result on the output topic |
+| Integration (DLQ) | 1 | Bad JSON and missing IDs routed to the dead-letter topic with error headers |
+| Integration (health) | 1 | Liveness returns 200; readiness moves from 503 to 200 |
 
-| Test Suite | Tests | What It Covers |
-|------------|-------|---------------|
-| Unit (pipeline) | 10 | Aggregator windows, router filtering, deserializer validation, pipeline error propagation |
-| Integration (E2E) | 1 | Produce → Kafka → pipeline → aggregated result in output topic |
-| Integration (DLQ) | 1 | Poison messages (bad JSON, missing ID) routed to dead-letter queue with error headers |
-| Integration (Health) | 1 | Liveness returns 200, readiness transitions from 503 → 200 |
+## Key design decisions
 
-## Key Design Decisions
+**segmentio/kafka-go over confluent-kafka-go.** Pure Go with no CGO, so builds and cross-compilation are simple. The trade-off is slightly lower raw throughput, and batching defaults that need tuning (see bug 1).
 
-**segmentio/kafka-go over confluent-kafka-go** — Pure Go, no CGO dependency, simpler cross-compilation and CI, easier debugging. Trade-off: slightly lower raw throughput, but sufficient for most use cases.
+**Tumbling windows over sliding.** Simpler state with no overlap. Sliding windows could be added as another `Stage`.
 
-**Tumbling windows over sliding** — Simpler state management, no overlap, sufficient for most aggregation use cases. Sliding windows can be added as an alternative Stage implementation.
+**At-least-once delivery.** Offsets are committed as messages are consumed, and open windows are flushed on shutdown, so a restart can re-emit a window. Downstream consumers treat a repeated window as a revision. Exactly-once would need idempotent producers and Kafka transactions.
 
-**Synchronous producer writes** — Trades throughput for delivery guarantees. Async mode available via config for higher throughput use cases.
+**Dashboard as an independent consumer.** It uses its own consumer groups and never touches processor internals, showing how Kafka decouples producers from any number of downstream readers.
 
-**Composable Stage interface** — Each processing step is independently testable. New stages (deduplication, rate limiting, schema validation) can be added without modifying existing code.
+**Zoneless Angular with signals.** The pipeline animation runs in a 60 fps canvas loop that only reads signals, so it never triggers Angular change detection. RxJS handles the event streams; signals hold UI state.
 
-**In-memory state over RocksDB** — Keeps the project focused. Production systems would use embedded storage with WAL for crash recovery.
+**In-memory state over RocksDB.** Keeps the project focused. A production system would use an embedded store with a changelog topic for crash recovery.
 
-## Interview Discussion Points
+## Discussion points
 
-- **At-least-once vs exactly-once**: Current design is at-least-once. Discuss how to achieve exactly-once with idempotent producers + transactional API.
-- **Backpressure**: What happens when processing is slower than consumption? Options: buffered channels, rate limiting, pause/resume consumer.
-- **Horizontal scaling**: Consumer group partitioning. Max parallelism = number of partitions.
-- **Late arrivals**: Current tumbling windows drop late events. Discuss watermarks and allowed lateness (Flink-style).
-- **State recovery**: Current in-memory state is lost on restart. Discuss changelog topics, RocksDB, or external state stores.
+- **Exactly-once:** idempotent producers plus the transactional API, and how that interacts with windowed state.
+- **Backpressure:** what happens when processing falls behind consumption (buffered channels, rate limiting, pausing the consumer). Fire a 5,000-event burst on the dashboard to see it.
+- **Horizontal scaling:** consumer-group partitioning; maximum parallelism equals the partition count (6 here).
+- **Late events:** tumbling windows currently drop late arrivals; watermarks and allowed lateness would fix that.
+- **State recovery:** in-memory windows are lost on a crash (as opposed to a graceful shutdown); changelog topics or RocksDB would fix that.
 
-## Tech Stack
+## Tech stack
 
-Go 1.24 | Apache Kafka | Prometheus | Grafana | Docker | Testcontainers
+Go 1.24 · Apache Kafka · Prometheus · Grafana · Angular 20 · Docker · Testcontainers
+
+## Author
+
+Eronic, MS Computer Science at Northeastern University
 
 ## License
 
 MIT
-
-## Author
-
-Eroniction Presley

@@ -1,0 +1,4 @@
+.git
+*.exe
+frontend/node_modules
+frontend/.angular

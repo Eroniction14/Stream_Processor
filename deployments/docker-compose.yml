@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
@@ -7,11 +5,18 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
     ports:
       - "2181:2181"
+    healthcheck:
+      test: ["CMD", "cub", "zk-ready", "localhost:2181", "5"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
+    restart: unless-stopped
     ports:
       - "9092:9092"
     environment:
@@ -31,7 +36,7 @@ services:
     command: |
       "
       echo 'Waiting for Kafka...' &&
-      cub kafka-ready -b kafka:29092 1 30 &&
+      cub kafka-ready -b kafka:29092 1 120 &&
       kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --partitions 6 --replication-factor 1 --topic user-events &&
       kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1 --topic aggregated-stats &&
       kafka-topics --create --if-not-exists --bootstrap-server kafka:29092 --partitions 1 --replication-factor 1 --topic dead-letter &&
@@ -43,7 +48,8 @@ services:
       context: ..
       dockerfile: deployments/Dockerfile
     depends_on:
-      - kafka-init
+      kafka-init:
+        condition: service_completed_successfully
     environment:
       CONFIG_PATH: /app/config.yaml
     ports:
@@ -56,7 +62,8 @@ services:
       context: ..
       dockerfile: deployments/Dockerfile.generator
     depends_on:
-      - kafka-init
+      kafka-init:
+        condition: service_completed_successfully
     environment:
       KAFKA_BROKERS: kafka:29092
 
@@ -75,3 +82,17 @@ services:
       - prometheus
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile.dashboard
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      PROMETHEUS_URL: http://prometheus:9090
+      PROCESSOR_HEALTH_URL: http://processor:8081/readyz
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully

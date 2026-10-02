@@ -44,6 +44,10 @@ func main() {
 		Addr:     kafka.TCP(brokers...),
 		Topic:    "user-events",
 		Balancer: &kafka.Hash{},
+		// kafka-go waits up to BatchTimeout (default 1s) to fill a batch before
+		// sending. WriteMessages is synchronous, so with the default every call
+		// blocked ~1s and the generator produced ~1 event/s instead of ~10.
+		BatchTimeout: 10 * time.Millisecond,
 	}
 	defer writer.Close()
 

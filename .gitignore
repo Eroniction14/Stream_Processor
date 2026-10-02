@@ -12,6 +12,11 @@ bin/
 # Output
 *.out
 
+# Frontend (also covered by frontend/.gitignore)
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+
 # IDE
 .idea/
 .vscode/

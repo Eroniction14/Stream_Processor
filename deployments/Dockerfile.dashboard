@@ -1,0 +1,14 @@
+FROM golang:1.24-alpine AS build
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN rm -rf cmd/dashboard/static && mkdir -p cmd/dashboard/static
+COPY frontend/dist/dashboard/browser/ cmd/dashboard/static/
+RUN CGO_ENABLED=0 go build -o dashboard ./cmd/dashboard
+
+FROM alpine:3.19
+WORKDIR /app
+COPY --from=build /app/dashboard .
+EXPOSE 8080
+CMD ["./dashboard"]

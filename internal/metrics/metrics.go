@@ -8,6 +8,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// latencyBuckets span 10µs to 1s. Processing a single event usually takes
+// well under a millisecond, so buckets must start in microseconds: with a
+// smallest bucket of 1ms, every observation fell into it and p99 always
+// read as ~0.99ms regardless of real latency.
+var latencyBuckets = []float64{
+	0.00001, 0.000025, 0.00005, // 10µs, 25µs, 50µs
+	0.0001, 0.00025, 0.0005, // 100µs, 250µs, 500µs
+	0.001, 0.0025, 0.005, // 1ms, 2.5ms, 5ms
+	0.01, 0.025, 0.05, // 10ms, 25ms, 50ms
+	0.1, 0.25, 0.5, 1, // 100ms, 250ms, 500ms, 1s
+}
+
 type Metrics struct {
 	MessagesReceived  prometheus.Counter
 	MessagesProcessed prometheus.Counter
@@ -55,7 +67,7 @@ func New(namespace string) *Metrics {
 			Namespace: namespace,
 			Name:      "processing_latency_seconds",
 			Help:      "Message processing latency",
-			Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
+			Buckets:   latencyBuckets,
 		}),
 		ActiveWindows: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
