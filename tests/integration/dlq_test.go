@@ -7,10 +7,10 @@ import (
 
 	"github.com/segmentio/kafka-go"
 
-	"github.com/Eroniction14/stream-processor/internal/consumer"
-	"github.com/Eroniction14/stream-processor/internal/pipeline"
-	"github.com/Eroniction14/stream-processor/internal/producer"
-	"github.com/Eroniction14/stream-processor/internal/state"
+	"github.com/Eroniction14/Stream_Processor/internal/consumer"
+	"github.com/Eroniction14/Stream_Processor/internal/pipeline"
+	"github.com/Eroniction14/Stream_Processor/internal/producer"
+	"github.com/Eroniction14/Stream_Processor/internal/state"
 )
 
 func TestDLQ_PoisonMessagesRouted(t *testing.T) {

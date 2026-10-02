@@ -9,8 +9,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/segmentio/kafka-go"
 
-	"github.com/Eroniction14/stream-processor/internal/metrics"
-	"github.com/Eroniction14/stream-processor/internal/pipeline"
+	"github.com/Eroniction14/Stream_Processor/internal/metrics"
+	"github.com/Eroniction14/Stream_Processor/internal/pipeline"
 )
 
 type Consumer struct {

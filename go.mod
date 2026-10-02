@@ -1,4 +1,4 @@
-module github.com/Eroniction14/stream-processor
+module github.com/Eroniction14/Stream_Processor
 
 go 1.24.5
 

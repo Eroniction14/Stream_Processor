@@ -10,13 +10,13 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/Eroniction14/stream-processor/config"
-	"github.com/Eroniction14/stream-processor/internal/consumer"
-	"github.com/Eroniction14/stream-processor/internal/health"
-	"github.com/Eroniction14/stream-processor/internal/metrics"
-	"github.com/Eroniction14/stream-processor/internal/pipeline"
-	"github.com/Eroniction14/stream-processor/internal/producer"
-	"github.com/Eroniction14/stream-processor/internal/state"
+	"github.com/Eroniction14/Stream_Processor/config"
+	"github.com/Eroniction14/Stream_Processor/internal/consumer"
+	"github.com/Eroniction14/Stream_Processor/internal/health"
+	"github.com/Eroniction14/Stream_Processor/internal/metrics"
+	"github.com/Eroniction14/Stream_Processor/internal/pipeline"
+	"github.com/Eroniction14/Stream_Processor/internal/producer"
+	"github.com/Eroniction14/Stream_Processor/internal/state"
 )
 
 func main() {

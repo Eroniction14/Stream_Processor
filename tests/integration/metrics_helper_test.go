@@ -3,7 +3,7 @@ package integration
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/Eroniction14/stream-processor/internal/metrics"
+	"github.com/Eroniction14/Stream_Processor/internal/metrics"
 )
 
 // newIsolatedMetrics creates a Metrics instance registered to its own

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Eroniction14/stream-processor/internal/health"
+	"github.com/Eroniction14/Stream_Processor/internal/health"
 )
 
 func TestHealthEndpoints(t *testing.T) {
